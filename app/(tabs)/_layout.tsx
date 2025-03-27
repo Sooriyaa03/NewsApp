@@ -1,45 +1,68 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
-import { Platform } from 'react-native';
+import React from "react";
+import { StatusBar } from "react-native";
+import { Tabs } from "expo-router";
+import { TabBar } from "@/components/TabBar";
 
-import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
+export default function TabsLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarBackground: TabBarBackground,
-        tabBarStyle: Platform.select({
-          ios: {
-            // Use a transparent background on iOS to show the blur effect
-            position: 'absolute',
-          },
-          default: {},
-        }),
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    </Tabs>
+    <>
+      {/* Change the status bar color and style */}
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      
+      <Tabs tabBar={(props) => <TabBar {...props} />}>
+        <Tabs.Screen
+          name="home"
+          options={{
+            title: "Home",
+            headerStyle: styles.headerBackground,
+            headerTintColor: styles.headerTintColor,
+            headerTitleStyle: styles.headerTitle,
+            headerTitleAlign: "center", // Center the title
+          }}
+        />
+        <Tabs.Screen
+          name="stock"
+          options={{
+            title: "Stock",
+            headerStyle: styles.headerBackground,
+            headerTintColor: styles.headerTintColor,
+            headerTitleStyle: styles.headerTitle,
+            headerTitleAlign: "center", // Center the title
+          }}
+        />
+        <Tabs.Screen
+          name="poll"
+          options={{
+            title: "Poll",
+            headerStyle: styles.headerBackground,
+            headerTintColor: styles.headerTintColor,
+            headerTitleStyle: styles.headerTitle,
+            headerTitleAlign: "center", // Center the title
+          }}
+        />
+        <Tabs.Screen
+          name="user"
+          options={{
+            title: "User",
+            headerStyle: styles.headerBackground,
+            headerTintColor: styles.headerTintColor,
+            headerTitleStyle: styles.headerTitle,
+            headerTitleAlign: "center", // Center the title
+          }}
+        />
+      </Tabs>
+    </>
   );
 }
+
+const styles = {
+  headerBackground: {
+    backgroundColor: "#1d232e", // Purple background for Home
+  },
+  headerTintColor: "#bfc2c6", // White text/icons for all headers
+  headerTitle: {
+    fontWeight: "bold",
+    fontSize: 20,
+    fontFamily: "Roboto-Medium", // Change this to your desired font family
+  },
+};
