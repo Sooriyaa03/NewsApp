@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, FlatList, Animated } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { db } from "../config/firebaseConfig"; // Import Firestore
+import { collection, getDocs, doc, updateDoc } from "firebase/firestore"; // Firestore functions
 
 interface PollOption {
   option: string;
@@ -13,65 +14,29 @@ interface Poll {
   options: PollOption[];
 }
 
-const samplePolls: Poll[] = [
-  {
-    id: "1",
-    question: "Do you think AI regulations should be stricter?",
-    options: [
-      { option: "Yes", votes: 0 },
-      { option: "No", votes: 0 },
-      { option: "Not Sure", votes: 0 },
-    ],
-  },
-  {
-    id: "2",
-    question: "Who will win the upcoming elections?",
-    options: [
-      { option: "Candidate A", votes: 0 },
-      { option: "Candidate B", votes: 0 },
-      { option: "Undecided", votes: 0 },
-    ],
-  },
-  {
-    id: "3",
-    question: "Should social media platforms ban political ads?",
-    options: [
-      { option: "Yes", votes: 0 },
-      { option: "No", votes: 0 },
-      { option: "Maybe", votes: 0 },
-    ],
-  },
-];
-
 const Polls = () => {
-  const [polls, setPolls] = useState<Poll[]>(samplePolls);
+  const [polls, setPolls] = useState<Poll[]>([]);
   const [animations, setAnimations] = useState<{ [key: string]: Animated.Value[] }>({});
 
   useEffect(() => {
-    loadPolls();
+    fetchPolls(); // Load polls from Firestore
   }, []);
 
   useEffect(() => {
     initializeAnimations();
   }, [polls]);
 
-  const loadPolls = async () => {
+  // Fetch Polls from Firestore
+  const fetchPolls = async () => {
     try {
-      const storedPolls = await AsyncStorage.getItem("polls");
-      if (storedPolls) {
-        setPolls(JSON.parse(storedPolls));
-      }
+      const querySnapshot = await getDocs(collection(db, "polls"));
+      const fetchedPolls: Poll[] = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Poll[];
+      setPolls(fetchedPolls);
     } catch (error) {
-      console.error("Error loading polls:", error);
-    }
-  };
-
-  const savePolls = async (updatedPolls: Poll[]) => {
-    try {
-      await AsyncStorage.setItem("polls", JSON.stringify(updatedPolls));
-      setPolls(updatedPolls);
-    } catch (error) {
-      console.error("Error saving polls:", error);
+      console.error("Error fetching polls:", error);
     }
   };
 
@@ -83,31 +48,25 @@ const Polls = () => {
     setAnimations(newAnimations);
   };
 
-  const animateBar = (pollId: string, optionIndex: number, percentage: number) => {
-    Animated.timing(animations[pollId][optionIndex], {
-      toValue: percentage,
-      duration: 500,
-      useNativeDriver: false,
-    }).start();
+  // Function to vote for an option
+  const vote = async (pollId: string, optionIndex: number) => {
+    const pollRef = doc(db, "polls", pollId);
+    const selectedPoll = polls.find((p) => p.id === pollId);
+    if (!selectedPoll) return;
+
+    const updatedOptions = selectedPoll.options.map((opt, index) =>
+      index === optionIndex ? { ...opt, votes: opt.votes + 1 } : opt
+    );
+
+    try {
+      await updateDoc(pollRef, { options: updatedOptions });
+      fetchPolls(); // Refresh polls after voting
+    } catch (error) {
+      console.error("Error updating vote:", error);
+    }
   };
 
-  const vote = (pollId: string, optionIndex: number) => {
-    const updatedPolls = polls.map((poll) => {
-      if (poll.id === pollId) {
-        const updatedOptions = poll.options.map((opt, index) =>
-          index === optionIndex ? { ...opt, votes: opt.votes + 1 } : opt
-        );
-        return { ...poll, options: updatedOptions };
-      }
-      return poll;
-    });
-    savePolls(updatedPolls);
-    
-    const totalVotes = updatedPolls.find((p) => p.id === pollId)?.options.reduce((sum, opt) => sum + opt.votes, 0) || 1;
-    const newPercentage = (updatedPolls.find((p) => p.id === pollId)?.options[optionIndex].votes || 0) / totalVotes * 100;
-    animateBar(pollId, optionIndex, newPercentage);
-  };
-
+  // Render each poll
   const renderPoll = ({ item }: { item: Poll }) => {
     const totalVotes = item.options.reduce((sum, opt) => sum + opt.votes, 0);
     return (
