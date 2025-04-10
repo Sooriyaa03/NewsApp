@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { SafeAreaView, Text, Pressable, TextInput, Alert, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
-import { signUp } from "../services/auth";  // Firebase signup function
+import { signUp, sendVerificationEmail } from "../services/auth"; // Firebase signup and verification email functions
 
 const SignUpScreen = () => {
   const router = useRouter();
@@ -11,9 +11,16 @@ const SignUpScreen = () => {
   const handleSignUp = async () => {
     try {
       const userCredential = await signUp(email, password);
-      if (userCredential) {
-        Alert.alert("Success", "Account created successfully!");
-        router.push("/(tabs)/home");  // Navigate after successful signup
+      if (userCredential && userCredential.user) {
+        // Account created successfully, now send verification email
+        await sendVerificationEmail(userCredential.user);
+        Alert.alert(
+          "Success",
+          "Account created successfully! Please check your email to verify your account."
+        );
+        router.push("/(tabs)/home"); // Navigate after successful signup (verification needed)
+      } else {
+        Alert.alert("Sign Up Failed", "Could not create user account.");
       }
     } catch (error) {
       Alert.alert("Sign Up Failed", error.message);

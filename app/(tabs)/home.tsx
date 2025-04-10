@@ -9,23 +9,29 @@ import {
   Dimensions,
   Animated,
   PanResponder,
+  Alert,
+  Linking, // Import Linking for opening URLs
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
 export default function Home() {
-  const [categories] = useState<string[]>([
+  const initialCategories = [
     "All",
+    "Saves",
     "Business",
     "Politics",
     "Entertainment",
     "Sports",
     "Technology",
     "Health",
-  ]);
+  ];
+  const [categories, setCategories] = useState<string[]>(initialCategories);
   const [newsData, setNewsData] = useState<{ [key: string]: any[] }>({
     All: [],
+    Saves: [],
     Business: [],
     Politics: [],
     Entertainment: [],
@@ -38,31 +44,71 @@ export default function Home() {
   const [swipeAnimation] = useState(new Animated.Value(0));
 
   useEffect(() => {
-    fetchNews(selectedCategory);
+    console.log("Selected Category changed:", selectedCategory);
+    if (selectedCategory === "Saves") {
+      loadSavedNews();
+    } else {
+      fetchNews(selectedCategory);
+    }
   }, [selectedCategory]);
 
-  // Function to fetch news data from NewsAPI
+  const loadSavedNews = async () => {
+    try {
+      const saved = await AsyncStorage.getItem("savedNews");
+      console.log("Raw saved data from AsyncStorage:", saved);
+      const parsed = saved ? JSON.parse(saved) : [];
+      console.log("Parsed saved data:", parsed);
+      setNewsData((prev) => ({ ...prev, Saves: parsed }));
+      console.log("News Data after loading saves:", newsData); // Log the state
+    } catch (error) {
+      console.error("Failed to load saved news:", error);
+    }
+  };
+
+  const saveNewsItem = async (newsItem: any) => {
+    try {
+      const saved = await AsyncStorage.getItem("savedNews");
+      const existing = saved ? JSON.parse(saved) : [];
+
+      const isAlreadySaved = existing.some(
+        (item: any) => item.url === newsItem.url
+      );
+
+      if (!isAlreadySaved) {
+        const updated = [...existing, newsItem];
+        await AsyncStorage.setItem("savedNews", JSON.stringify(updated));
+        console.log("News saved to AsyncStorage:", updated);
+        Alert.alert("Saved", "News saved successfully!");
+        if (selectedCategory === "Saves") {
+          loadSavedNews();
+        }
+      } else {
+        Alert.alert("Already Saved", "This news is already in your saves.");
+      }
+    } catch (error) {
+      console.error("Failed to save news:", error);
+    }
+  };
+
   const fetchNews = async (category: string) => {
     try {
       let fetchedNews = [];
-
       const apiKey = "8dd8c08f3b57496085f634d93edd7d76"; // Replace with your NewsAPI key
       let url = `https://newsapi.org/v2/top-headlines?apiKey=${apiKey}&category=${category.toLowerCase()}`;
 
-      // If 'All' category is selected, fetch news for all categories and merge
       if (category === "All") {
-        const allPromises = categories
-          .filter((cat) => cat !== "All")
-          .map((cat) => axios.get(`https://newsapi.org/v2/top-headlines?apiKey=${apiKey}&category=${cat.toLowerCase()}`));
+        const allPromises = initialCategories
+          .filter((cat) => cat !== "All" && cat !== "Saves")
+          .map((cat, index) => axios.get(`https://newsapi.org/v2/top-headlines?apiKey=${apiKey}&category=${initialCategories[index + 2].toLowerCase()}`));
 
         const allResults = await Promise.all(allPromises);
         fetchedNews = allResults.flatMap((result, index) =>
           result.data.articles.map((newsItem: any) => ({
             ...newsItem,
-            category: categories[index + 1],
+            category: initialCategories[index + 2],
           }))
         );
-      } else {
+      } else if (category !== "Saves") {
         const response = await axios.get(url);
         fetchedNews = response.data.articles;
       }
@@ -88,10 +134,13 @@ export default function Home() {
   const handleSwipe = (direction: "left" | "right") => {
     if (focusedIndex === null) return;
 
+    const currentNewsArray = newsData[selectedCategory];
+    if (!currentNewsArray) return;
+
     const nextIndex =
       direction === "left" ? focusedIndex + 1 : focusedIndex - 1;
 
-    if (nextIndex >= 0 && nextIndex < newsData[selectedCategory]?.length) {
+    if (nextIndex >= 0 && nextIndex < currentNewsArray.length) {
       Animated.timing(swipeAnimation, {
         toValue: direction === "left" ? -SCREEN_WIDTH : SCREEN_WIDTH,
         duration: 200,
@@ -112,9 +161,20 @@ export default function Home() {
     },
   });
 
-  // Get the top 5 news for the slider from the fetched data
   const topNews = newsData[selectedCategory]?.slice(0, 5);
-  const remainingNews = newsData[selectedCategory]?.slice(5); // Exclude the first 5 from the main list
+  const remainingNews = newsData[selectedCategory]?.slice(5);
+
+  console.log("Rendering with newsData:", newsData); // Log during render
+
+  const focusedNewsItem = focusedIndex !== null ? newsData[selectedCategory]?.[focusedIndex] : null;
+
+  const openArticle = (url: string | undefined) => {
+    if (url) {
+      Linking.openURL(url);
+    } else {
+      Alert.alert("No Source", "Could not open the source of this article.");
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -127,7 +187,10 @@ export default function Home() {
           {categories.map((category, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.categoryButton}
+              style={[
+                styles.categoryButton,
+                category === "Saves" && styles.savesCategoryButton,
+              ]}
               onPress={() => {
                 setSelectedCategory(category);
                 setFocusedIndex(null);
@@ -137,6 +200,7 @@ export default function Home() {
                 style={[
                   styles.categoryText,
                   selectedCategory === category && styles.selectedCategoryText,
+                  category === "Saves" && styles.savesCategoryText,
                 ]}
               >
                 {category}
@@ -147,8 +211,7 @@ export default function Home() {
       </View>
 
       <ScrollView style={styles.content}>
-        {/* Horizontal Slider for top 5 news */}
-        {topNews && (
+        {topNews && selectedCategory !== "Saves" && (
           <View style={styles.sliderContainer}>
             <ScrollView
               horizontal
@@ -169,15 +232,26 @@ export default function Home() {
           </View>
         )}
 
-        {/* Main News List */}
         {focusedIndex === null ? (
           <ScrollView contentContainerStyle={styles.listContent}>
-            {/* Render the rest of the news excluding the first 5 displayed in the slider */}
-            {remainingNews?.map((news, index) => (
+            {selectedCategory === "Saves" && newsData.Saves?.map((news, index) => (
               <TouchableOpacity
                 key={index}
                 style={styles.newsCard}
-                onPress={() => handleFocus(index + 5)} // Adjust the index for the remaining news
+                onPress={() => handleFocus(index)}
+              >
+                <Image source={{ uri: news.urlToImage }} style={styles.thumbnail} />
+                <View style={styles.textContainer}>
+                  <Text style={styles.title}>{news.title}</Text>
+                  <Text style={styles.gist}>{news.description}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            {selectedCategory !== "Saves" && remainingNews?.map((news, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.newsCard}
+                onPress={() => handleFocus(index + 5)}
               >
                 <Image source={{ uri: news.urlToImage }} style={styles.thumbnail} />
                 <View style={styles.textContainer}>
@@ -193,16 +267,20 @@ export default function Home() {
             {...panResponder.panHandlers}
           >
             <ScrollView contentContainerStyle={styles.focusedScroll}>
-              <Image
-                source={{ uri: newsData[selectedCategory][focusedIndex]?.urlToImage }}
-                style={styles.focusedImage}
-              />
+              {focusedNewsItem?.urlToImage && (
+                <Image
+                  source={{ uri: focusedNewsItem.urlToImage }}
+                  style={styles.focusedImage}
+                />
+              )}
               <View style={styles.focusedTextContainer}>
                 <Text style={styles.focusedTitle}>
-                  {newsData[selectedCategory][focusedIndex]?.title}
+                  {focusedNewsItem?.title}
                 </Text>
                 <Text style={styles.focusedDetails}>
-                  {newsData[selectedCategory][focusedIndex]?.content}
+                  {focusedNewsItem?.content?.includes("[+")
+                    ? focusedNewsItem?.description // Show description if content is truncated
+                    : focusedNewsItem?.content || focusedNewsItem?.description}
                 </Text>
                 <TouchableOpacity
                   style={styles.closeButton}
@@ -210,6 +288,40 @@ export default function Home() {
                 >
                   <Text style={styles.closeButtonText}>Close</Text>
                 </TouchableOpacity>
+                {focusedNewsItem?.url && (
+                  <TouchableOpacity
+                    style={[styles.openArticleButton, { marginTop: 10 }]}
+                    onPress={() => openArticle(focusedNewsItem.url)}
+                  >
+                    <Text style={styles.openArticleButtonText}>Read Full Article</Text>
+                  </TouchableOpacity>
+                )}
+                {selectedCategory !== "Saves" && (
+                  <TouchableOpacity
+                    style={[styles.saveButton, { marginTop: 10 }]}
+                    onPress={() => saveNewsItem(focusedNewsItem)}
+                  >
+                    <Text style={styles.closeButtonText}>Save</Text>
+                  </TouchableOpacity>
+                )}
+                {selectedCategory === "Saves" && (
+                  <TouchableOpacity
+                    style={[styles.deleteButton, { marginTop: 10 }]}
+                    onPress={async () => {
+                      if (focusedNewsItem) {
+                        const saved = await AsyncStorage.getItem("savedNews");
+                        const existing = saved ? JSON.parse(saved) : [];
+                        const updated = existing.filter((item: any) => item.url !== focusedNewsItem.url);
+                        await AsyncStorage.setItem("savedNews", JSON.stringify(updated));
+                        setNewsData((prev) => ({ ...prev, Saves: updated }));
+                        handleCloseFocus();
+                        Alert.alert("Deleted", "News removed from saves.");
+                      }
+                    }}
+                  >
+                    <Text style={styles.closeButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </ScrollView>
           </Animated.View>
@@ -231,8 +343,15 @@ const styles = StyleSheet.create({
   categoryButton: { paddingHorizontal: 15 },
   categoryText: { fontSize: 14, color: "#6e6e6e" },
   selectedCategoryText: { fontWeight: "bold", color: "#333" },
+  savesCategoryButton: {
+    backgroundColor: "#fdd835",
+    borderRadius: 5,
+  },
+  savesCategoryText: {
+    color: "#212121",
+    fontWeight: "bold",
+  },
 
-  // Slider Styles
   sliderContainer: { paddingVertical: 10, marginBottom: 10 },
   sliderContent: { paddingHorizontal: 10 },
   sliderCard: {
@@ -254,7 +373,6 @@ const styles = StyleSheet.create({
     color: "#333",
   },
 
-  // News List Styles
   content: { flex: 1 },
   listContent: { paddingBottom: 50 },
   newsCard: {
@@ -271,8 +389,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: "bold", color: "#333" },
   gist: { fontSize: 14, color: "#777" },
 
-  focusedView: { flex: 1 },
-  focusedScroll: { paddingBottom: 50 },
+  focusedView: { flex: 1, backgroundColor: "#fff" },
+  focusedScroll: { paddingBottom: 70 }, // Added more bottom padding
   focusedImage: {
     width: SCREEN_WIDTH,
     height: SCREEN_WIDTH * 0.6,
@@ -291,5 +409,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
+  saveButton: {
+    backgroundColor: "#ff914d",
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  deleteButton: {
+    backgroundColor: "#be4040",
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  openArticleButton: {
+    backgroundColor: "#1976d2",
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  openArticleButtonText: { color: "#fff", fontSize: 16 },
   closeButtonText: { color: "#fff", fontSize: 16 },
 });
